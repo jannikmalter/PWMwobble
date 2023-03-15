@@ -1,45 +1,44 @@
 #include <Arduino.h>
 #include <math.h>
 #include <Adafruit_PWMServoDriver.h>
-#include <FastLED.h>
 
-#define NUM_OUT 8
-#define DT_MIN 5
-#define DT_MAX 10
-#define DI_MIN 0.1
+#define NUM_OUT 8        // number of output channels
+#define DT_MIN 5000      // shortest fade time [ms]
+#define DT_MAX 10000     // longest fade time [ms]
+#define DI_MIN 0.1       // minimum intensity change per fade [%]
+#define A 2.5            // dimming curve factor
+
+unsigned long* t_start;  // holds start time of current fade for each channel
+unsigned long* t_stop;   // holds stop time of current fade for each channel
+float* i_start;          // holds start intensity of current fade for each channel
+float* i_stop;           // holds stop intensity of current fade for each channel
+
+unsigned long t;         // holds current time
+unsigned long dt;        // for measuring time deltas
+unsigned long length;    // length of a fade
+float intensity;         // single intensity value
+float di;                // intensity delta of a fade
+float prog;              // progress of a fade
+unsigned long out;       // output value for PWM board
 
 Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
 
-unsigned long* t_start;
-unsigned long* t_stop;
-float* i_start;
-float* i_stop;
-
-unsigned long out;
-unsigned long t;
-unsigned long dt;
-unsigned long length;
-float new_i;
-float di;
-float prog;
-float intensity;
-
-
 void next(uint8_t i){
-  t = micros();
-  dt = (unsigned long) random(DT_MIN * 1000000L, DT_MAX * 1000000L);
+  length = (unsigned long) random(DT_MIN * 1000L, DT_MAX * 1000L);
   t_start[i] = t;
-  t_stop[i] = t + dt;
-  
+  t_stop[i] = t + length; 
+
+  // if last fade was up, next one is down
   if (i_stop[i] > i_start[i]){
-    new_i = (float)random(0, (i_stop[i] - DI_MIN)*1000)/1000;
+    intensity = (float)random(0, (i_stop[i] - DI_MIN)*1000)/1000;
   }
+  // if last fade was down, next one is up
   else if (i_stop[i] <= i_start[i]){
-    new_i = (float)random((i_stop[i] + DI_MIN)*1000, 1000)/1000;
+    intensity = (float)random((i_stop[i] + DI_MIN)*1000, 1000)/1000;
   }
 
   i_start[i] = i_stop[i];
-  i_stop[i] = new_i;
+  i_stop[i] = intensity;
 }
 
 void setup() {
@@ -48,27 +47,27 @@ void setup() {
   i_start = (float*) calloc(NUM_OUT, sizeof(float));
   i_stop = (float*) calloc(NUM_OUT, sizeof(float));
 
-  Serial.begin(9600);
-  Serial.println("16 channel PWM test!");
+  randomSeed(analogRead(0));
+
   pwm.begin();
   pwm.setPWMFreq(1600);
 }
 
 void loop() {
-  t = micros();
   for(uint8_t i=0; i<NUM_OUT; i++){
+    t = micros();
     length = t_stop[i] - t_start[i];
-    dt = t - t_start[i];
-    prog = (float)dt/(float)length; 
+    dt     =         t - t_start[i];    
 
+    // if fade is over, generate next one
     if (dt >= length){
       next(i);
-    }else{
+
+    }else{      
       di = i_stop[i] - i_start[i];
+      prog = (float)dt/(float)length; 
       intensity = i_start[i] + sin(prog*PI/2) * di;
-      out = (unsigned long) exp((0.9*intensity+0.1)*log(4096))-exp(0.1);
-      //out = intensity*4096.0;
-      //Serial.println(out);
+      out = (unsigned long)((exp(A*intensity)-1)/(exp(A)-1)*4096);
       pwm.setPWM(i, 0, out);
     }
   }
