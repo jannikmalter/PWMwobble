@@ -33,7 +33,7 @@ void next(uint8_t i){
     intensity = (float)random(0, (i_stop[i] - DI_MIN)*1000)/1000;
   }
   // if last fade was down, next one is up
-  else if (i_stop[i] <= i_start[i]){
+  else{
     intensity = (float)random((i_stop[i] + DI_MIN)*1000, 1000)/1000;
   }
 
