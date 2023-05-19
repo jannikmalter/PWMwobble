@@ -1,11 +1,22 @@
 #include <Arduino.h>
 #include <math.h>
-#include <Adafruit_PWMServoDriver.h>
 
-#define NUM_OUT 8        // number of output channels
-#define DT_MIN 5000      // shortest fade time [ms]
-#define DT_MAX 10000     // longest fade time [ms]
-#define DI_MIN 0.1       // minimum intensity change per fade [%]
+#define CHIP 1 // 0 = 12 Bit, 1 = 16 Bit
+
+
+#if CHIP == 1
+  #define datapin 11
+  #define clockpin 13
+  #include <Adafruit_TLC59711.h>
+  #include <SPI.h>
+#else
+  #include <Adafruit_PWMServoDriver.h>
+#endif
+
+#define NUM_OUT 5        // number of output channels
+#define DT_MIN 100      // shortest fade time [ms]
+#define DT_MAX 300     // longest fade time [ms]
+#define DI_MIN 0.5       // minimum intensity change per fade [%]
 #define A 2.5            // dimming curve factor
 
 unsigned long* t_start;  // holds start time of current fade for each channel
@@ -21,7 +32,14 @@ float di;                // intensity delta of a fade
 float prog;              // progress of a fade
 unsigned long out;       // output value for PWM board
 
-Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
+#if CHIP == 1
+  Adafruit_TLC59711 pwm = Adafruit_TLC59711(1,clockpin,datapin);
+#else
+  Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
+#endif
+
+
+
 
 void next(uint8_t i){
   length = (unsigned long) random(DT_MIN * 1000L, DT_MAX * 1000L);
@@ -42,6 +60,7 @@ void next(uint8_t i){
 }
 
 void setup() {
+  Serial.begin(9600);
   t_start = (unsigned long*) calloc(NUM_OUT, sizeof(unsigned long));
   t_stop = (unsigned long*) calloc(NUM_OUT, sizeof(unsigned long));
   i_start = (float*) calloc(NUM_OUT, sizeof(float));
@@ -49,8 +68,14 @@ void setup() {
 
   randomSeed(analogRead(0));
 
-  pwm.begin();
-  pwm.setPWMFreq(1600);
+  #if CHIP == 1
+    pwm.begin();
+    pwm.write();
+  #else
+    pwm.begin();
+  #endif
+  
+
 }
 
 void loop() {
@@ -66,9 +91,20 @@ void loop() {
     }else{      
       di = i_stop[i] - i_start[i];
       prog = (float)dt/(float)length; 
-      intensity = i_start[i] + sin(prog*PI/2) * di;
+      intensity = i_start[i] + sin(prog*PI/2) * di;      
+
+    #if CHIP == 1
+      out = (unsigned long)((exp(A*intensity)-1)/(exp(A)-1)*65536);
+      pwm.setPWM(i, out);      
+    #else
       out = (unsigned long)((exp(A*intensity)-1)/(exp(A)-1)*4096);
       pwm.setPWM(i, 0, out);
+    #endif    
     }
   }
+  #if CHIP == 1
+    pwm.write();   
+    delay(10);
+  #endif
+  
 }
